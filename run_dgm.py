@@ -58,9 +58,11 @@ def run_meta_evolution():
 
     print("\n\n=== META-EVOLUTION: Establishing Baseline Performance ===")
     
-    # --- THIS IS THE MODIFIED LINE ---
-    with open('benchmarks/challenge_benchmark.json', 'r') as f:
+# ... inside run_meta_evolution function ...
+    # --- THIS IS THE REVERTED LINE ---
+    with open('benchmarks/benchmark_suite.json', 'r') as f:
         benchmark_suite = json.load(f)
+# ... rest of the file is the same ...
 
     total_gens = sum(solver.evolve(task['task_description'], task['test_code']) for task in benchmark_suite)
     baseline_score = total_gens / len(benchmark_suite)

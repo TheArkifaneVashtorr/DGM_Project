@@ -2,18 +2,15 @@
 # config/settings.py
 # Central configuration file for the Darwin Gödel Machine.
 
-MODEL_CONFIGS = {
-    'mutator_model': 'mutator_model:latest',
-    'solver_model': 'solver_model:latest'
-}
-
 # --- Evolutionary Solver Settings ---
 MAX_GENERATIONS = 10  # Max attempts for the solver to find a solution for a benchmark.
 POPULATION_SIZE = 5   # Number of candidate solutions to generate per generation.
 DIVERSITY_CLUSTER_COUNT = 3 # Number of top solution clusters to maintain for diversity.
 
-# --- LLM Interface Settings ---
-# Defines the names of the custom models to be built and used by Ollama.
+MODEL_CONFIGS = {
+    "solver_model": "solver_model:latest",
+    "mutator_model": "mutator_model:latest"
+}
 
 # --- Knowledge Manager Settings ---
 CHROMA_DB_PATH = "./chroma_db"
