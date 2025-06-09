@@ -1,64 +1,45 @@
-# config.py (Refactored for Planner-Coder Architecture)
+# config.py
+# Central configuration for the Darwin Gödel Machine
 
-# Ollama and Vector DB Configuration
-OLLAMA_BASE_URL = "http://ollama:11434"
+# --- Service Endpoints ---
+OLLAMA_API_URL = "http://localhost:11434/api/generate"
+CHROMA_HOST = "localhost"
+CHROMA_PORT = "8000"
+
+# --- DB and Directory Names ---
+KNOWLEDGE_BASE_COLLECTION = "dgm_knowledge_base_v4"
 KNOWLEDGE_BASE_DIR = "./knowledge_base"
-DOCUMENT_GLOB_PATTERN = "**/*.py"
 
-# --- Evolvable Genome Parameters ---
-AVAILABLE_EMBEDDING_MODELS = [
-    "gemma:7b",
-    "mistral:latest",
-]
+# --- Evolutionary Parameters ---
+AVAILABLE_MODELS = ["codellama:latest", "llama3:latest"]
 
-AVAILABLE_GENERATOR_MODELS = [
-    "llama3:8b",
-    "mistral:latest",
-    "gemma:7b",
-    "codellama:latest",
-]
+# --- Prompt Templates ---
+RAG_PROMPT_TEMPLATE = """
+Based on the following CONTEXT, write a Python function that correctly implements the TASK.
+Your response must contain ONLY the raw code for the function.
 
-# NEW: Prompts for the Planner-Coder workflow
-PLANNER_PROMPT_TEMPLATE = (
-    "You are a senior software architect. Your task is to create a clear, step-by-step, language-agnostic plan to solve the following user query based on the provided code context.\n"
-    "Do not write any code. Your output must be only the numbered steps of the plan.\n\n"
-    "--- CONTEXT ---\n{context}\n\n"
-    "--- USER QUERY ---\n{query}\n\n"
-    "--- PLAN ---\n"
-)
+CONTEXT:
+---
+{context}
+---
 
-CODER_PROMPT_TEMPLATE = (
-    "You are a senior software developer. Your task is to write the Python code that precisely implements the following step-by-step plan.\n"
-    "Only output the raw Python code for the function. Do not include explanations or prose.\n\n"
-    "--- CONTEXT ---\n{context}\n\n"
-    "--- PLAN ---\n{plan}\n\n"
-    "--- PYTHON CODE ---\n"
-)
+TASK:
+---
+{task_description}
+---
+"""
 
-# The debugging prompt is now simpler, as the primary logic is in the main loop.
-DEBUGGING_PROMPT_TEMPLATE = (
-    "Your previous code attempt failed. Analyze the plan, your faulty code, and the error. Provide a corrected Python function.\n"
-    "Only output the raw Python code.\n\n"
-    "--- PLAN ---\n{plan}\n\n"
-    "--- FAULTY CODE ---\n```python\n{faulty_code}\n```\n\n"
-    "--- ERROR ---\n{error_message}\n\n"
-    "--- CORRECTED PYTHON CODE ---\n"
-)
+# FINAL SELF-MODIFY PROMPT: Radically simplified and focused on one variable.
+SELF_MODIFY_PROMPT_TEMPLATE = """
+**ROLE:** You are an automated code refactoring system.
+**TASK:** Your only task is to rewrite the `RAG_PROMPT_TEMPLATE` variable in the following Python script to make it more effective. The goal is to get a better code solution from the worker LLM.
+**CRITICAL OUTPUT FORMATTING RULES:**
+- Return the COMPLETE and UNCHANGED source code for the file.
+- The ONLY change you are allowed to make is to the string value of the `RAG_PROMPT_TEMPLATE` variable.
+- Your entire response must be ONLY raw Python code. Do not add any commentary or markdown.
 
-# Evolvable hyperparameters
-CHUNK_SIZES = [500, 1000, 2000]
-TOP_K_VALUES = [2, 3, 5]
-TEMPERATURE_VALUES = [0.2, 0.7, 1.2]
-
-
-# --- Evolutionary Algorithm Parameters ---
-POPULATION_SIZE = 10
-NUM_GENERATIONS = 25
-MUTATION_RATE = 0.15
-TOURNAMENT_SIZE = 3
-
-# --- Fitness Evaluation Parameters ---
-FITNESS_WEIGHTS = {
-    "correctness": 1.0,
-    "efficiency": 0.2
-}
+**FULL SOURCE CODE TO MODIFY:**
+---
+{source_code}
+---
+"""
