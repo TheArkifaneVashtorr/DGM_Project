@@ -11,3 +11,5 @@ chromadb
 lxml
 html2text
 docker
+# DGM Project Dependencies
+requests

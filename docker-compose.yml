@@ -1,4 +1,18 @@
+# docker-compose.yml (Refactored for modern Docker Compose)
+# Orchestrates the DGM application and the Ollama LLM service.
+
 services:
+  dgm-app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: dgm_app
+    depends_on:
+      - ollama
+    volumes:
+      - .:/dgm
+    restart: on-failure
+
   ollama:
     image: ollama/ollama:latest
     container_name: ollama
@@ -6,6 +20,7 @@ services:
       - "11434:11434"
     volumes:
       - ollama_data:/root/.ollama
+    tty: true
     restart: unless-stopped
     deploy:
       resources:
@@ -14,24 +29,7 @@ services:
             - driver: nvidia
               count: all
               capabilities: [gpu]
-    healthcheck:
-      test: ["CMD", "ollama", "list"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
-  dgm:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    container_name: dgm
-    environment:
-      - DGM_OLLAMA_HOST_URL=http://ollama:11434
-    depends_on:
-      ollama:
-        condition: service_healthy
-    restart: unless-stopped
-    tty: true
 
 volumes:
   ollama_data:
+    # This named volume persists the downloaded LLM models
