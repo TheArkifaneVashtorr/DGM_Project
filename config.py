@@ -29,9 +29,8 @@ TASK:
 ---
 """
 
-# FINAL SELF-MODIFY PROMPT: Radically simplified and focused on one variable.
 SELF_MODIFY_PROMPT_TEMPLATE = """
-**ROLE:** You are an automated code refactoring system.
+**ROLE:** You are an automated code modification system.
 **TASK:** Your only task is to rewrite the `RAG_PROMPT_TEMPLATE` variable in the following Python script to make it more effective. The goal is to get a better code solution from the worker LLM.
 **CRITICAL OUTPUT FORMATTING RULES:**
 - Return the COMPLETE and UNCHANGED source code for the file.
@@ -41,5 +40,24 @@ SELF_MODIFY_PROMPT_TEMPLATE = """
 **FULL SOURCE CODE TO MODIFY:**
 ---
 {source_code}
+---
+"""
+
+# NEW: Prompt for the self-repair loop
+REPAIR_PROMPT_TEMPLATE = """
+**ROLE:** You are an automated code debugging system.
+**TASK:** The following Python script you previously generated contains a syntax error. Your task is to fix it.
+**CRITICAL OUTPUT FORMATTING RULES:**
+- Return the COMPLETE, corrected source code for the entire file.
+- Your entire response must be ONLY raw Python code. Do not add commentary or markdown.
+
+**SYNTAX ERROR TO FIX:**
+---
+{syntax_error}
+---
+
+**INVALID CODE TO FIX:**
+---
+{invalid_code}
 ---
 """
