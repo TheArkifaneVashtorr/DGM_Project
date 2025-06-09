@@ -1,20 +1,17 @@
-# Dockerfile for the DGM Agent
+# Use an official Python runtime as a parent image
+FROM python:3.11
 
-# Use a specific Python version for reproducibility.
-FROM python:3.11-slim
-
-# Set the working directory inside the container.
+# Set the working directory in the container
 WORKDIR /app
 
-# Copy the dependency definition file.
+# Copy the requirements file into the container
 COPY requirements.txt .
 
-# Install the Python dependencies.
+# Install dependencies directly into the container's python environment
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy the DGM application source code into the container.
+# Copy the rest of the application's code into the container
 COPY . .
 
-# Define the command to run when the container starts.
-# The agent will begin its evolutionary loop immediately.
-CMD ["python", "dgm_agent.py"]
+# Command to run the application
+CMD ["python3", "dgm_orchestrator.py"]

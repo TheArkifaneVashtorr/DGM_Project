@@ -1,48 +1,78 @@
 # dgm_core/verifier.py
-# This module contains the "Gödelian" verifier component of the DGM.
-
 import ast
-import z3
+import logging
 
 class Verifier:
     """
-    A simple formal verifier to analyze code for specific properties.
-    This initial version checks for potential division-by-zero errors.
+    Analyzes code for formal properties and potential logical errors.
+    In DGM v9.0, this is upgraded to perform Abstract Syntax Tree (AST) analysis.
     """
 
-    def analyze_code(self, code: str) -> float:
-        """
-        Analyzes the given Python code for potential division-by-zero errors.
+    def __init__(self):
+        logging.basicConfig(level=logging.INFO, format='%(message)s')
+        self.logger = logging.getLogger(__name__)
 
+    def _check_for_potential_index_errors(self, tree: ast.AST) -> float:
+        """
+        Heuristically checks for potential IndexError by analyzing loops and subscripts.
+        This is a simple verifier; more advanced analysis is possible.
+        
+        Returns a score from 0.0 (high risk) to 1.0 (low risk).
+        A very basic check: if a loop over range(len(x)) uses x[i+1], flag it.
+        """
+        score = 1.0
+        for node in ast.walk(tree):
+            # Check for loops like 'for i in range(len(some_list))'
+            if isinstance(node, ast.For) and isinstance(node.iter, ast.Call):
+                call = node.iter
+                if isinstance(call.func, ast.Name) and call.func.id == 'range':
+                    if call.args and isinstance(call.args[0], ast.Call):
+                        len_call = call.args[0]
+                        if isinstance(len_call.func, ast.Name) and len_call.func.id == 'len':
+                            # We have a 'for i in range(len(list_name))' loop
+                            # Now, look for risky subscripts inside this loop
+                            for sub_node in ast.walk(node):
+                                if isinstance(sub_node, ast.Subscript):
+                                    # Check if the subscript index is 'i + constant'
+                                    if (isinstance(sub_node.slice, ast.BinOp) and
+                                        isinstance(sub_node.slice.op, ast.Add) and
+                                        isinstance(sub_node.slice.left, ast.Name) and
+                                        sub_node.slice.left.id == node.target.id):
+                                        self.logger.warning("Verifier Warning: Potential IndexError due to index offset in loop.")
+                                        score = 0.5 # Penalize potential off-by-one error
+                                        break # Found one issue, no need to check further in this loop
+            if score < 1.0:
+                break
+        return score
+
+
+    def analyze(self, code: str) -> dict[str, float]:
+        """
+        Performs static analysis on the given code.
+        
         Args:
-            code (str): The Python source code to analyze.
+            code (str): The source code to analyze.
 
         Returns:
-            float: A verifiability score. 1.0 if no potential division-by-zero
-                   is found, 0.0 otherwise.
+            dict: A dictionary of verification scores.
+                  For now, contains 'verifiability_score'.
         """
+        results = {"verifiability_score": 1.0}
+
         try:
             tree = ast.parse(code)
-            for node in ast.walk(tree):
-                if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Div):
-                    # For each division, create a Z3 solver to check if the
-                    # denominator can ever be zero. This is a simplification;
-                    # a real system would need to track constraints on the variable.
-                    # For now, we check if the denominator is a literal zero.
-                    if isinstance(node.right, ast.Constant) and node.right.value == 0:
-                        print("[Verifier] Found literal division by zero.")
-                        return 0.0  # Unverifiable
+            # Add more analysis functions here as the verifier grows
+            index_error_score = self._check_for_potential_index_errors(tree)
 
-                    # A more advanced analysis could use Z3 to solve for conditions
-                    # where the denominator expression could be zero.
-                    # This simple check serves as a placeholder for that logic.
+            # Combine scores (for now, we only have one)
+            final_score = index_error_score
+            results["verifiability_score"] = final_score
 
-        except SyntaxError:
-            # If the code can't be parsed, it's not verifiable.
-            return 0.0
+        except SyntaxError as e:
+            self.logger.warning(f"Verifier: SyntaxError - {e}. Returning lowest score.")
+            results["verifiability_score"] = 0.0
         except Exception as e:
-            print(f"[Verifier] An unexpected error occurred during verification: {e}")
-            return 0.2 # Return a low score if verification itself fails.
+            self.logger.error(f"Verifier: An unexpected error occurred during analysis: {e}")
+            results["verifiability_score"] = 0.1 # Penalize unexpected analysis errors
 
-        # If no potential issues are found, the code is considered verifiable.
-        return 1.0
+        return results

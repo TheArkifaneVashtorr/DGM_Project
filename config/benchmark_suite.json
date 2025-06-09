@@ -1,0 +1,43 @@
+[
+    {
+        "name": "is_palindrome",
+        "description": "Create a Python function 'is_palindrome' that checks if a string is a palindrome. It should be case-insensitive and ignore non-alphanumeric characters.",
+        "test_cases": [
+            {"input": ["A man, a plan, a canal: Panama"], "expected_output": true},
+            {"input": ["race a car"], "expected_output": false},
+            {"input": ["Was it a car or a cat I saw?"], "expected_output": true},
+            {"input": ["No 'x' in 'Nixon'"], "expected_output": true}
+        ]
+    },
+    {
+        "name": "factorial",
+        "description": "Create a Python function 'factorial' that calculates the factorial of a non-negative integer using recursion.",
+        "test_cases": [
+            {"input": [5], "expected_output": 120},
+            {"input": [0], "expected_output": 1},
+            {"input": [1], "expected_output": 1},
+            {"input": [7], "expected_output": 5040}
+        ]
+    },
+    {
+        "name": "find_max",
+        "description": "Create a Python function 'find_max' that returns the largest number in a list of numbers without using the built-in max() function.",
+        "test_cases": [
+            {"input": [[1, 2, 3, 4, 5]], "expected_output": 5},
+            {"input": [[-1, -5, -3]], "expected_output": -1},
+            {"input": [[10, 2, 8, 10]], "expected_output": 10},
+            {"input": [[-5]], "expected_output": -5}
+        ]
+    },
+    {
+        "name": "longest_common_subsequence",
+        "description": "Create a Python function 'longest_common_subsequence' that takes two strings, s1 and s2, and returns the length of their longest common subsequence. This is a classic dynamic programming problem.",
+        "test_cases": [
+            {"input": ["AGGTAB", "GXTXAYB"], "expected_output": 4},
+            {"input": ["ABCDGH", "AEDFHR"], "expected_output": 3},
+            {"input": ["programming", "gaming"], "expected_output": 5},
+            {"input": ["abc", "def"], "expected_output": 0},
+            {"input": ["", "abc"], "expected_output": 0}
+        ]
+    }
+]

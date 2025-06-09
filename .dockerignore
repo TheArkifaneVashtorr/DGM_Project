@@ -1,15 +1,16 @@
-# .dockerignore
-
-# Exclude the Python virtual environment
+# Ignore the local virtual environment
 venv/
 
-# Exclude Python cache files
+# Ignore Python cache files
 __pycache__/
 *.pyc
 
-# Exclude runtime data directories
+# Ignore the vector database storage
+chroma_db/
 vector_store/
-knowledge_base/
 
-# Exclude git directory if present
+# Ignore git directory
 .git/
+
+# Ignore temporary mutant packages
+dgm_mutant_package/

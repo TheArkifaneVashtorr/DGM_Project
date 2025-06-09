@@ -1,6 +1,0 @@
-[
-    {
-        "task_description": "Create a Python function 'is_prime' that takes an integer and returns True if it is a prime number, and False otherwise. Numbers less than 2 are not prime.",
-        "test_code": "assert is_prime(2) == True\nassert is_prime(3) == True\nassert is_prime(4) == False\nassert is_prime(5) == True\nassert is_prime(17) == True\nassert is_prime(18) == False\nassert is_prime(1) == False\nassert is_prime(0) == False\nassert is_prime(-10) == False"
-    }
-]

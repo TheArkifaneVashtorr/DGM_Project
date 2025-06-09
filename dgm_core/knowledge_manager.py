@@ -1,95 +1,97 @@
 # dgm_core/knowledge_manager.py
-# This module manages the system's long-term, persistent memory using a vector store.
-
+import os
+import logging
 import chromadb
-import config.settings as settings
+from chromadb.utils import embedding_functions
+from config import settings
 
 class KnowledgeManager:
     """
-    Manages the persistent knowledge base (vector store) for the DGM.
-    It handles loading, retrieving, and managing the system's own source code as knowledge.
+    Manages the DGM's knowledge base using a vector store (ChromaDB).
+    It is responsible for loading, embedding, and querying documents.
     """
-    def __init__(self, source_files: list):
-        """
-        Initializes the Knowledge Manager, sets up the ChromaDB client,
-        and ensures the knowledge base is loaded.
+    COLLECTION_NAME = "dgm_knowledge"
 
-        Args:
-            source_files (list): A list of paths to the source code files
-                                 that form the system's knowledge base.
-        """
-        print("Initializing Knowledge Manager...")
+    def __init__(self, source_files: list[str]):
+        logging.basicConfig(level=logging.INFO, format='%(message)s')
+        self.logger = logging.getLogger(__name__)
+        self.source_files = source_files
+        self.collection = None
+        
         try:
-            # Use PersistentClient to store the database locally. This is more robust
-            # and self-contained than requiring a separate running server.
+            # Use the default sentence transformer for local embeddings
+            self.embedding_function = embedding_functions.SentenceTransformerEmbeddingFunction(
+                model_name="all-MiniLM-L6-v2"
+            )
+            # Initialize the ChromaDB client with a persistent path
             self.chroma_client = chromadb.PersistentClient(path=settings.CHROMA_DB_PATH)
             
+            # Get or create the collection
             self.collection = self.chroma_client.get_or_create_collection(
-                name=settings.COLLECTION_NAME
+                name=self.COLLECTION_NAME,
+                embedding_function=self.embedding_function
             )
-            
-            # Ensure the knowledge base is populated
-            self._load_knowledge(source_files)
-            print("Knowledge Manager initialized successfully.")
-
         except Exception as e:
-            # Catching a broad exception here because chromadb can raise various errors
-            # during initialization, and we want to provide a clear, fatal error message.
+            # This broad exception is to catch potential issues with ChromaDB/SentenceTransformer setup
+            # which can be numerous (network, file permissions, etc.)
             raise RuntimeError(f"FATAL: Could not initialize or connect to ChromaDB. Error: {e}")
 
-    def _load_knowledge(self, source_files: list):
-        """
-        Loads the content of the system's source files into the vector store.
-        This process is idempotent; it won't duplicate existing documents.
-        """
-        print("  Loading knowledge into vector store...")
-        doc_ids = [src.replace('/', '_') for src in source_files]
-        
-        # Check which documents already exist to avoid reprocessing
-        existing_ids = set(self.collection.get(ids=doc_ids)['ids'])
-        
-        docs_to_add = []
-        ids_to_add = []
+    def _load_and_process_documents(self) -> tuple[list[str], list[str]]:
+        """Loads documents from the knowledge_base directory."""
+        documents = []
+        ids = []
+        for file_name in self.source_files:
+            file_path = os.path.join(settings.KNOWLEDGE_BASE_DIR, file_name)
+            try:
+                with open(file_path, 'r', encoding='utf-8') as f:
+                    # Treat each file as a single document
+                    documents.append(f.read())
+                    ids.append(file_name) # Use filename as the document ID
+            except FileNotFoundError:
+                self.logger.warning(f"Knowledge source not found, skipping: {file_path}")
+            except Exception as e:
+                self.logger.error(f"Error reading {file_path}: {e}")
+        return documents, ids
 
-        for src_file, doc_id in zip(source_files, doc_ids):
-            if doc_id not in existing_ids:
-                try:
-                    with open(src_file, 'r') as f:
-                        docs_to_add.append(f.read())
-                        ids_to_add.append(doc_id)
-                except FileNotFoundError:
-                    print(f"Warning: Source file not found during knowledge loading: {src_file}")
+    def initialize(self):
+        """Initializes the vector store, loading documents if necessary."""
+        self.logger.info("Initializing Knowledge Manager...")
         
-        if docs_to_add:
-            print(f"  Adding {len(docs_to_add)} new document(s) to the collection...")
+        # Check if the database already contains the expected documents
+        if self.collection.count() >= len(self.source_files):
+             self.logger.info("  Knowledge base is already up-to-date.")
+             return
+
+        self.logger.info("  Loading knowledge into vector store...")
+        documents, ids = self._load_and_process_documents()
+
+        if not documents:
+            self.logger.error("No documents found to load into knowledge base.")
+            return
+
+        try:
+            # Add documents to the collection. ChromaDB handles embedding automatically.
             self.collection.add(
-                documents=docs_to_add,
-                ids=ids_to_add
+                documents=documents,
+                ids=ids
             )
-        else:
-            print("  Knowledge base is already up-to-date.")
+            self.logger.info(f"  Successfully loaded {len(documents)} documents.")
+        except Exception as e:
+            self.logger.error(f"Failed to add documents to Chroma collection: {e}")
 
-    def retrieve_context(self, query: str, n_results: int = 3) -> str:
-        """
-        Retrieves relevant context from the knowledge base for a given query.
-
-        Args:
-            query (str): The query or task description to find context for.
-            n_results (int): The number of relevant documents to retrieve.
-
-        Returns:
-            str: A formatted string containing the retrieved context, or an empty string.
-        """
-        if not query:
-            return ""
+    def query(self, query_text: str, n_results: int = 3) -> list:
+        """Queries the knowledge base for relevant documents."""
+        if not self.collection:
+            self.logger.error("Knowledge collection is not initialized.")
+            return []
             
         try:
             results = self.collection.query(
-                query_texts=[query],
+                query_texts=[query_text],
                 n_results=n_results
             )
-            context = "\n".join(results['documents'][0])
-            return context
+            # The 'documents' key contains a list of lists.
+            return [doc for doc in results['documents'][0]]
         except Exception as e:
-            print(f"Error retrieving context from ChromaDB: {e}")
-            return ""
+            self.logger.error(f"An error occurred during knowledge query: {e}")
+            return []
