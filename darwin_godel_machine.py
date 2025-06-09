@@ -1,5 +1,5 @@
 # darwin_godel_machine.py
-# Janus - General Purpose Solver v2.1
+# Janus - Darwinian RAG v3.0
 
 import json
 import re
@@ -8,133 +8,144 @@ import uuid
 import requests
 import chromadb
 import time
-import subprocess # CORRECTED: Added missing import
+import subprocess
+import os
 
 # --- System Configuration ---
 OLLAMA_API_URL = "http://localhost:11434/api/generate"
-OLLAMA_TAGS_URL = "http://localhost:11434/api/tags"
 CHROMA_HOST = "localhost"
 CHROMA_PORT = "8000"
-EVOLUTIONARY_ARCHIVE_COLLECTION = "dgm_archive_final" 
+KNOWLEDGE_BASE_COLLECTION = "dgm_knowledge_base"
+EVOLUTIONARY_ARCHIVE_COLLECTION = "dgm_evolutionary_archive"
+KNOWLEDGE_BASE_DIR = "./knowledge_base"
 
 # --- Genetic Components ---
 AVAILABLE_MODELS = ["codellama:latest", "llama3:latest"]
-PROMPT_TEMPLATES = {
-    "simple": "Based on the function signature and docstring, generate a complete Python function. Your response must contain ONLY the raw code for the function. Function: ```python\n{function_signature}\n    \"\"\"{docstring}\"\"\"\n```",
-    "expert": "As an expert Python programmer, write the body of the following function to meet the requirements in its docstring. The code must be efficient and robust. Return ONLY the raw code for the full function. Function: ```python\n{function_signature}\n    \"\"\"{docstring}\"\"\"\n```"
-}
+PROMPT_TEMPLATE = """
+Based on the following CONTEXT, write a Python function that correctly implements the TASK.
+Your response must contain ONLY the raw code for the function.
+
+CONTEXT:
+---
+{context}
+---
+
+TASK:
+---
+{task_description}
+---
+"""
 
 class DarwinGodelMachine:
     """
-    An AI that evolves code to solve programming tasks by passing a provided test suite.
+    An AI that uses a Retrieval-Augmented Generation (RAG) pipeline
+    to evolve code that solves problems based on an external knowledge base.
     """
     def __init__(self):
-        print("Initializing Darwin Gödel Machine v2.1...")
-        self.chroma_client = chromadb.HttpClient(host=CHROMA_HOST, port=CHROMA_PORT)
-        self.archive = self.chroma_client.get_or_create_collection(name=EVOLUTIONARY_ARCHIVE_COLLECTION)
-        print(f"Successfully connected to ChromaDB. Archive contains {self.archive.count()} items.")
+        print("Initializing Darwinian RAG v3.0...")
+        try:
+            self.chroma_client = chromadb.HttpClient(host=CHROMA_HOST, port=CHROMA_PORT)
+            self.knowledge_base = self.chroma_client.get_or_create_collection(name=KNOWLEDGE_BASE_COLLECTION)
+            self.archive = self.chroma_client.get_or_create_collection(name=EVOLUTIONARY_ARCHIVE_COLLECTION)
+            print("Successfully connected to ChromaDB.")
+            self._load_knowledge_base()
+        except Exception as e:
+            print(f"FATAL: Could not connect to services. Error: {e}")
+            exit(1)
         print("Initialization complete.")
 
-    def _clean_code(self, raw_response):
-        """Robustly extracts code from markdown blocks."""
-        match = re.search(r'```python\n(.*?)\n```', raw_response, re.DOTALL)
-        if match:
-            return match.group(1).strip()
-        
-        # Fallback for code that isn't in a markdown block
-        return raw_response.strip().strip('`')
-
-    def _evaluate_fitness(self, generated_code, test_code):
+    def _load_knowledge_base(self):
         """
-        Executes the generated code against the provided test suite.
-        Fitness is the ratio of passing tests.
+        Reads documents, chunks them, and stores their embeddings in ChromaDB.
         """
-        if not generated_code or not isinstance(generated_code, str): return 0.0
-        
-        full_script = generated_code + "\n\n" + test_code
+        print(f"Loading knowledge from '{KNOWLEDGE_BASE_DIR}'...")
+        if self.knowledge_base.count() > 0:
+            print("Knowledge base is already loaded.")
+            return
 
         try:
-            process = subprocess.run(
-                ['python3', '-c', full_script],
-                capture_output=True,
-                text=True,
-                timeout=15 
-            )
+            for filename in os.listdir(KNOWLEDGE_BASE_DIR):
+                filepath = os.path.join(KNOWLEDGE_BASE_DIR, filename)
+                if os.path.isfile(filepath):
+                    with open(filepath, 'r') as f:
+                        content = f.read()
+                        # Simple chunking by paragraph
+                        chunks = [chunk for chunk in content.split('\n\n') if chunk.strip()]
+                        for i, chunk in enumerate(chunks):
+                            chunk_id = f"{filename}-{i}"
+                            self.knowledge_base.add(documents=[chunk], ids=[chunk_id])
+            print(f"Knowledge base loaded with {self.knowledge_base.count()} document chunks.")
+        except FileNotFoundError:
+            print(f"ERROR: Knowledge base directory '{KNOWLEDGE_BASE_DIR}' not found.")
+        except Exception as e:
+            print(f"ERROR: Failed to load knowledge base. {e}")
             
+    def _retrieve_context(self, query, n_results=2):
+        """Retrieves relevant context from the knowledge base."""
+        results = self.knowledge_base.query(query_texts=[query], n_results=n_results)
+        return "\n".join(results['documents'][0]) if results['documents'] else ""
+
+    def _evaluate_fitness(self, generated_code, test_code):
+        """Executes generated code against a test suite to determine fitness."""
+        if not generated_code: return 0.0
+        full_script = generated_code + "\n\n" + test_code
+        try:
+            process = subprocess.run(['python3', '-c', full_script], capture_output=True, text=True, timeout=15)
             if process.returncode == 0:
                 print("[Fitness Eval] All tests passed.")
                 return 1.0
             else:
-                error_output = process.stderr
-                print(f"[Fitness Eval] Test execution failed. Error: {error_output.strip()}")
+                print(f"[Fitness Eval] Test execution failed. Error: {process.stderr.strip()}")
                 return 0.1
-        except subprocess.TimeoutExpired:
-            print("[Fitness Eval] Execution timed out.")
-            return 0.0
         except Exception as e:
             print(f"[Fitness Eval] Failed to execute script. Error: {e}")
             return 0.0
 
-    def _generate_variation(self, task_description, function_signature, docstring):
-        """Generates a new potential solution."""
+    def _generate_variation(self, task_description):
+        """Uses RAG to generate a solution."""
         llm_model = random.choice(AVAILABLE_MODELS)
-        query_text = task_description
         
-        if self.archive.count() > 0 and random.random() < 0.75:
-            retrieved_results = self.archive.query(query_texts=[query_text], n_results=1)
-            if retrieved_results['ids'] and retrieved_results['ids'][0]:
-                ancestor_code = self.archive.get(ids=retrieved_results['ids'][0])['documents'][0]
-                print(f"\n--- Found ancestor. Mutating with {llm_model}. ---")
-                prompt_text = f"Mutate the following Python code to better solve the described task. Return ONLY the raw code for the full function. Task: '{docstring}'. Original Code: {ancestor_code}"
-                prompt_key = "mutation"
-            else:
-                prompt_key = random.choice(list(PROMPT_TEMPLATES.keys()))
-                print(f"\n--- Exploring new solution with {llm_model} and '{prompt_key}' strategy. ---")
-                prompt_text = PROMPT_TEMPLATES[prompt_key].format(function_signature=function_signature, docstring=docstring)
-        else:
-            prompt_key = random.choice(list(PROMPT_TEMPLATES.keys()))
-            print(f"\n--- Archive empty or chose exploration. Generating new solution with {llm_model} and '{prompt_key}' strategy. ---")
-            prompt_text = PROMPT_TEMPLATES[prompt_key].format(function_signature=function_signature, docstring=docstring)
+        context = self._retrieve_context(task_description)
+        if not context:
+            print("WARNING: No relevant context found in the knowledge base for this task.")
+
+        print(f"--- Retrieved Context ---\n{context}\n-------------------------")
+        
+        prompt_text = PROMPT_TEMPLATE.format(context=context, task_description=task_description)
         
         payload = {"model": llm_model, "prompt": prompt_text, "stream": False}
         try:
             response = requests.post(OLLAMA_API_URL, json=payload, timeout=180)
             response.raise_for_status()
             raw_response = response.json().get('response', '')
-            generated_code = self._clean_code(raw_response)
-            return generated_code, llm_model, prompt_key
+            generated_code = raw_response.strip('` \n')
+            return generated_code, llm_model
         except requests.exceptions.RequestException as e:
             print(f"ERROR communicating with Ollama: {e}")
-            return None, None, None
+            return None, None
 
-    def evolve(self, task_description, function_signature, test_code, generations=20):
-        """Evolves a solution to pass the provided test suite."""
-        print(f"\n=== Starting Evolution for General Task: '{task_description}' for {generations} generations ===")
+    def evolve(self, task_description, test_code, generations=10):
+        """Evolves a solution using the RAG pipeline."""
+        print(f"\n=== Starting RAG Evolution for Task: '{task_description}' for {generations} generations ===")
         best_solution_so_far = {"code": "", "fitness": -1.0}
-        docstring = task_description
 
         for gen in range(generations):
             print(f"\n--- Generation {gen + 1}/{generations} ---")
-            generation_result = self._generate_variation(task_description, function_signature, docstring)
+            generation_result = self._generate_variation(task_description)
+            
             if not generation_result or not generation_result[0]:
                 print("Failed to generate code. Skipping generation.")
                 continue
             
-            generated_code, model, prompt_key = generation_result
+            generated_code, model = generation_result
             fitness_score = self._evaluate_fitness(generated_code, test_code)
-            print(f"Generated Code (Fitness: {fitness_score:.2f}, Model: {model}, Strategy: {prompt_key}):")
+            
+            print(f"Generated Code (Fitness: {fitness_score:.2f}, Model: {model}):")
             print("-" * 20 + "\n" + generated_code + "\n" + "-" * 20)
 
             if fitness_score >= 1.0:
-                solution_id = str(uuid.uuid4())
-                self.archive.add(
-                    ids=[solution_id], 
-                    documents=[generated_code], 
-                    metadatas=[{"task": task_description, "fitness": fitness_score, "model": model, "prompt_key": prompt_key}]
-                )
-                print(f"PERFECT solution {solution_id[:8]} with fitness {fitness_score:.2f} added to archive.")
-                if fitness_score > best_solution_so_far["fitness"]:
-                    best_solution_so_far = {"code": generated_code, "fitness": fitness_score, "generation": gen + 1}
+                print("PERFECT solution found. Halting evolution.")
+                best_solution_so_far = {"code": generated_code, "fitness": fitness_score, "generation": gen + 1}
                 break
 
         print("\n=== Evolution Complete ===")
@@ -148,21 +159,20 @@ class DarwinGodelMachine:
 if __name__ == "__main__":
     dgm = DarwinGodelMachine()
     
-    # --- Define a new task and its test suite ---
-    task_description = "Reverses a given string."
-    function_signature = "def reverse_string(s: str) -> str:"
+    task_description = "Create the 'apply_transaction_fee' function as specified in the documentation."
+    
     test_code = """
-assert reverse_string("hello") == "olleh"
-assert reverse_string("world") == "dlrow"
-assert reverse_string("") == ""
-assert reverse_string("12345") == "54321"
-assert reverse_string("Janus") == "sunaJ"
-print("All tests passed for reverse_string!")
+def test_fee_application():
+    assert apply_transaction_fee(1000) == 1005, "Should add 5 cents to 1000"
+    assert apply_transaction_fee(0) == 5, "Should add 5 cents to 0"
+    assert apply_transaction_fee(999995) == 1000000, "Should handle large numbers"
+
+test_fee_application()
+print("All tests for apply_transaction_fee passed!")
 """
     
     dgm.evolve(
         task_description=task_description, 
-        function_signature=function_signature, 
         test_code=test_code, 
-        generations=10
+        generations=5
     )
