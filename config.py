@@ -1,16 +1,11 @@
-# config.py
-# Every piece of knowledge must have a single, unambiguous, authoritative representation.
-# This file serves as that single source of truth for DGM configuration.
+# config.py (Refactored for Planner-Coder Architecture)
 
 # Ollama and Vector DB Configuration
 OLLAMA_BASE_URL = "http://ollama:11434"
 KNOWLEDGE_BASE_DIR = "./knowledge_base"
-VECTOR_STORE_DIR = "./vector_store" # This is no longer used by the agent but is kept for context.
 DOCUMENT_GLOB_PATTERN = "**/*.py"
 
 # --- Evolvable Genome Parameters ---
-# These lists define the discrete choices for the evolutionary algorithm.
-# The DGM will evolve to select the optimal combination of these components.
 AVAILABLE_EMBEDDING_MODELS = [
     "gemma:7b",
     "mistral:latest",
@@ -23,42 +18,47 @@ AVAILABLE_GENERATOR_MODELS = [
     "codellama:latest",
 ]
 
-# Initial prompt templates. The EA will mutate and evolve these strings.
-INITIAL_PROMPT_TEMPLATES = [
-    """
-    You are an AI programming assistant. Your task is to analyze the provided code context and resolve the user's query.
-    Based on the following code context, provide a refactored and improved version of the specified function.
-    Only output the complete, valid Python code for the function. Do not include explanations or prose.
+# NEW: Prompts for the Planner-Coder workflow
+PLANNER_PROMPT_TEMPLATE = (
+    "You are a senior software architect. Your task is to create a clear, step-by-step, language-agnostic plan to solve the following user query based on the provided code context.\n"
+    "Do not write any code. Your output must be only the numbered steps of the plan.\n\n"
+    "--- CONTEXT ---\n{context}\n\n"
+    "--- USER QUERY ---\n{query}\n\n"
+    "--- PLAN ---\n"
+)
 
-    Code Context:
-    {context}
+CODER_PROMPT_TEMPLATE = (
+    "You are a senior software developer. Your task is to write the Python code that precisely implements the following step-by-step plan.\n"
+    "Only output the raw Python code for the function. Do not include explanations or prose.\n\n"
+    "--- CONTEXT ---\n{context}\n\n"
+    "--- PLAN ---\n{plan}\n\n"
+    "--- PYTHON CODE ---\n"
+)
 
-    User Query:
-    {query}
-    """,
-    """
-    As a master software architect, your goal is to enhance the provided code.
-    Review the code context below and address the user's request by generating superior code.
-    The output must be only the raw Python code block for the requested function.
+# The debugging prompt is now simpler, as the primary logic is in the main loop.
+DEBUGGING_PROMPT_TEMPLATE = (
+    "Your previous code attempt failed. Analyze the plan, your faulty code, and the error. Provide a corrected Python function.\n"
+    "Only output the raw Python code.\n\n"
+    "--- PLAN ---\n{plan}\n\n"
+    "--- FAULTY CODE ---\n```python\n{faulty_code}\n```\n\n"
+    "--- ERROR ---\n{error_message}\n\n"
+    "--- CORRECTED PYTHON CODE ---\n"
+)
 
-    Context from Knowledge Base:
-    {context}
+# Evolvable hyperparameters
+CHUNK_SIZES = [500, 1000, 2000]
+TOP_K_VALUES = [2, 3, 5]
+TEMPERATURE_VALUES = [0.2, 0.7, 1.2]
 
-    Request:
-    {query}
-    """
-]
 
 # --- Evolutionary Algorithm Parameters ---
 POPULATION_SIZE = 10
 NUM_GENERATIONS = 25
-MUTATION_RATE = 0.1
+MUTATION_RATE = 0.15
 TOURNAMENT_SIZE = 3
 
 # --- Fitness Evaluation Parameters ---
-# The DGM's objective is to generate code that is correct and efficient.
-# We will use weights to create a multi-objective fitness function.
 FITNESS_WEIGHTS = {
-    "correctness": 1.0,  # Did the code execute without errors?
-    "efficiency": 0.2    # Penalize high resource usage (CPU/memory)
+    "correctness": 1.0,
+    "efficiency": 0.2
 }

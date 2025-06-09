@@ -9,3 +9,4 @@ langchain-ollama
 chromadb
 lxml
 html2text
+docker

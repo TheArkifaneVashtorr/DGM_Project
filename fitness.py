@@ -1,75 +1,106 @@
-# fitness.py (Refactored for Semantic Evaluation)
-# Implements a more advanced fitness function that executes code to check for correctness.
+# fitness.py (Refactored for Sandbox Test Harness)
+# This version evaluates code by building and running it in an isolated Docker container.
 
 import ast
 import time
+import os
+import uuid
+import tempfile
+import shutil
+import docker
 import config
 
-def evaluate_fitness(generated_code: str, execution_time: float) -> float:
+def evaluate_fitness(generated_code: str, execution_time: float) -> tuple[float, str | None]:
     """
-    Calculates the fitness of a generated piece of code by executing it
-    and comparing its output to a known correct result.
-
-    A higher score is better.
+    Calculates fitness by running the generated code in an isolated Docker container.
+    Returns a tuple of (fitness_score, error_message).
     """
-    # Immediately fail if code is empty or an error message.
-    if not generated_code.strip() or "ERROR:" in generated_code:
-        return 0.0
+    processed_code = generated_code.strip()
 
-    # 1. Syntax Check (as before)
+    if not processed_code or "ERROR:" in processed_code:
+        return 0.0, "Generated code was empty or an error placeholder."
+
+    # 1. Syntax Check (pre-computation check)
     try:
-        ast.parse(generated_code)
-    except (SyntaxError, ValueError):
-        # ValueError can be raised for null bytes in code
-        print("Fitness evaluation: Generated code has syntax errors.")
-        return 0.0
+        ast.parse(processed_code)
+    except (SyntaxError, ValueError) as e:
+        error_msg = f"Pre-check Syntax Error: {e}"
+        print(f"Fitness evaluation: {error_msg}")
+        return 0.0, error_msg
 
-    # 2. Semantic (Execution) Check 
-    # We execute the generated code and check if the output is correct.
-    correctness_score = 0.0
-    try:
-        # Define the expected output of the function we are trying to refactor.
-        expected_output = [2, 4, 6, 8, 10]
+    # Create a temporary directory to build the test container
+    with tempfile.TemporaryDirectory() as temp_dir:
+        try:
+            # --- Write generated code and test runner to temp directory ---
+            with open(os.path.join(temp_dir, "test_subject.py"), "w") as f:
+                f.write(processed_code)
 
-        # Create a dictionary to serve as the execution scope.
-        execution_scope = {}
-        
-        # Execute the generated string of Python code.
-        # The string should contain the definition of the refactored function.
-        exec(generated_code, execution_scope)
+            runner_script = (
+                "from test_subject import example_function_to_refactor\n"
+                "test_input = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]\n"
+                "try:\n"
+                "    result = example_function_to_refactor(test_input)\n"
+                "    print(result)\n"
+                "except Exception as e:\n"
+                "    print(f'EXECUTION_ERROR: {e}')\n"
+            )
+            with open(os.path.join(temp_dir, "run_test.py"), "w") as f:
+                f.write(runner_script)
 
-        # The generated code should have defined our target function.
-        refactored_function = execution_scope.get('example_function_to_refactor')
+            dockerfile_content = (
+                "FROM python:3.11-slim\n"
+                "WORKDIR /test\n"
+                "COPY . .\n"
+                "CMD [\"python\", \"run_test.py\"]\n"
+            )
+            with open(os.path.join(temp_dir, "Dockerfile"), "w") as f:
+                f.write(dockerfile_content)
 
-        if callable(refactored_function):
-            # Call the generated function and get its output.
-            actual_output = refactored_function()
-            if actual_output == expected_output:
-                # The function works as expected. This is a highly fit individual.
-                correctness_score = 1.0
-                print(f"Fitness evaluation: Semantic check PASSED. Output: {actual_output}")
-            else:
-                # The function runs but produces the wrong output.
-                correctness_score = 0.25 # Assign partial credit
-                print(f"Fitness evaluation: Semantic check FAILED. Expected {expected_output}, got {actual_output}")
-        else:
-            # The code was valid syntax but did not define the required function.
-            correctness_score = 0.1 # Assign minor credit for valid code
-            print("Fitness evaluation: Code is valid but did not define 'example_function_to_refactor'.")
+            # --- Use Docker SDK to build and run the test ---
+            client = docker.from_env()
+            image_tag = f"dgm-test-run:{uuid.uuid4().hex}"
+            
+            print(f"--- Building test container: {image_tag} ---")
+            image, _ = client.images.build(path=temp_dir, tag=image_tag, rm=True, forcerm=True)
+            
+            print(f"--- Running test container: {image_tag} ---")
+            container = client.containers.run(image.id, detach=True)
+            result = container.wait(timeout=30)
+            logs = container.logs().decode('utf-8').strip()
+            container.remove()
 
-    except Exception as e:
-        # The code was syntactically valid but failed at runtime.
-        correctness_score = 0.0
-        print(f"Fitness evaluation: Code failed during execution: {e}")
+            # --- Evaluate the results from the container ---
+            if result['StatusCode'] != 0 or "EXECUTION_ERROR:" in logs:
+                error_msg = f"Execution Error inside container: {logs}"
+                print(f"Fitness evaluation: {error_msg}")
+                return 0.0, error_msg
 
-    # 3. Efficiency Penalty (as before)
-    max_tolerable_time = 30.0
-    efficiency_penalty = min(execution_time / max_tolerable_time, 1.0)
+            try:
+                # The output from the container should be a string representation of a list
+                actual_output = ast.literal_eval(logs)
+                expected_output = [2, 4, 6, 8, 10]
 
-    # Combine scores
-    total_fitness = (
-        config.FITNESS_WEIGHTS["correctness"] * correctness_score -
-        config.FITNESS_WEIGHTS["efficiency"] * efficiency_penalty
-    )
+                if actual_output != expected_output:
+                    error_msg = f"Output Mismatch. Expected {expected_output}, but got {actual_output}."
+                    print(f"Fitness evaluation: {error_msg}")
+                    return 0.25, error_msg
+                
+                # SUCCESS
+                success_msg = f"Semantic check PASSED. Output: {actual_output}"
+                print(f"Fitness evaluation: {success_msg}")
+                total_fitness = (config.FITNESS_WEIGHTS["correctness"] * 1.0) - (config.FITNESS_WEIGHTS["efficiency"] * (execution_time / 30.0))
+                return max(0, total_fitness), None
 
-    return max(0, total_fitness)
+            except (ValueError, SyntaxError):
+                error_msg = f"Container output was not a valid Python literal: {logs}"
+                print(f"Fitness evaluation: {error_msg}")
+                return 0.0, error_msg
+
+        except docker.errors.BuildError as e:
+            error_msg = f"Container Build Error (likely bad code): {e}"
+            print(f"Fitness evaluation: {error_msg}")
+            return 0.0, error_msg
+        except Exception as e:
+            error_msg = f"Sandbox Harness Error: {e}"
+            print(f"Fitness evaluation: {error_msg}")
+            return 0.0, error_msg

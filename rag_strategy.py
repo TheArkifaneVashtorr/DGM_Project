@@ -1,9 +1,10 @@
-# rag_strategy.py (Architecturally Hardened)
-# Implements the Strategy design pattern with fully isolated components.
+# rag_strategy.py (Refactored for Planner-Coder Architecture)
+# The execute method now implements a Plan -> Code -> Test -> Debug workflow.
 
 import os
-# FIX: Import uuid to generate unique identifiers.
 import uuid
+import time
+import hashlib
 import chromadb
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.runnables import RunnablePassthrough
@@ -13,101 +14,88 @@ from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain.prompts import PromptTemplate
 from langchain_ollama import OllamaLLM, OllamaEmbeddings
 import config
+from fitness import evaluate_fitness
 
 class RAGStrategy:
-    """Abstract base class for a RAG strategy."""
     def execute(self, query: str):
-        raise NotImplementedError("This method should be overridden by subclasses.")
+        raise NotImplementedError
 
 class ConcreteRAGStrategy(RAGStrategy):
-    """
-    Represents a specific, executable RAG pipeline configuration.
-    """
-    def __init__(self, embedding_model: str, generator_model: str, prompt_template: str):
-        self.embedding_model = embedding_model
-        self.generator_model = generator_model
-        self.prompt_template_str = prompt_template
-        self.qa_chain = None
-
-        print(f"Initializing Strategy: Embed='{self.embedding_model}', Gen='{self.generator_model}'")
+    def __init__(self, **genome):
+        self.genome = genome
+        self.llm = None
+        self.retriever = None
         self._initialize_components()
 
     def _initialize_components(self):
-        """Initializes components with a uniquely named, isolated vector store and an explicit LCEL chain."""
         try:
+            self.llm = OllamaLLM(
+                base_url=config.OLLAMA_BASE_URL,
+                model=self.genome['generator_model'],
+                temperature=self.genome['temperature']
+            )
             embeddings = OllamaEmbeddings(
                 base_url=config.OLLAMA_BASE_URL,
-                model=self.embedding_model
+                model=self.genome['embedding_model']
             )
-            llm = OllamaLLM(
-                base_url=config.OLLAMA_BASE_URL,
-                model=self.generator_model
-            )
-
-            loader = DirectoryLoader(
-                config.KNOWLEDGE_BASE_DIR,
-                glob=config.DOCUMENT_GLOB_PATTERN,
-                loader_cls=TextLoader
-            )
+            loader = DirectoryLoader(config.KNOWLEDGE_BASE_DIR, glob=config.DOCUMENT_GLOB_PATTERN, loader_cls=TextLoader)
             documents = loader.load()
-            
-            if not documents:
-                print("Warning: No documents found in the knowledge base.")
-                self.qa_chain = None
-                return
+            if not documents: return
 
-            text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
+            text_splitter = RecursiveCharacterTextSplitter(chunk_size=self.genome['chunk_size'], chunk_overlap=self.genome['chunk_size'] // 5)
             texts = text_splitter.split_documents(documents)
             
             client = chromadb.EphemeralClient()
-
-            # FIX: Provide a unique collection name for every instance.
-            # This is the final step to ensure complete vector store isolation
-            # and resolve the dimensionality conflict permanently.
-            unique_collection_name = uuid.uuid4().hex
             vector_store = Chroma.from_documents(
-                documents=texts,
-                embedding=embeddings,
-                client=client,
-                collection_name=unique_collection_name
+                documents=texts, embedding=embeddings, client=client, collection_name=uuid.uuid4().hex
             )
-            retriever = vector_store.as_retriever()
-
-            prompt = PromptTemplate(
-                template=self.prompt_template_str,
-                input_variables=["context", "query"]
-            )
-            
-            self.qa_chain = (
-                {"context": retriever, "query": RunnablePassthrough()}
-                | prompt
-                | llm
-                | StrOutputParser()
-            )
-
+            self.retriever = vector_store.as_retriever(search_kwargs={"k": self.genome['top_k']})
         except Exception as e:
             print(f"Error initializing RAG components: {e}")
-            self.qa_chain = None
 
     def execute(self, query: str) -> dict:
-        """Executes the RAG query and returns the result."""
-        if not self.qa_chain:
-            print("Cannot execute strategy: QA chain not initialized.")
-            return {"result": "ERROR: Initialization failed."}
-            
-        print(f"Executing query: '{query}' with strategy.")
-        try:
-            result_str = self.qa_chain.invoke(query)
-            return {"result": result_str}
-        except Exception as e:
-            print(f"Error during strategy execution: {e}")
-            return {"result": f"ERROR: Execution failed. Details: {e}"}
+        if not self.llm or not self.retriever:
+            return {"result": "ERROR: Initialization failed.", "final_fitness": 0.0, "total_time": 0, "error_message": "Initialization failed."}
 
-def example_function_to_refactor():
-    # This is an inefficient example.
-    my_list = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
-    evens = []
-    for item in my_list:
-        if item % 2 == 0:
-            evens.append(item)
-    return evens
+        start_time = time.time()
+        
+        # --- 1. PLANNER STEP ---
+        print("--- Agent engaging Planner... ---")
+        context_docs = self.retriever.get_relevant_documents(query)
+        context_str = "\n\n".join([doc.page_content for doc in context_docs])
+        
+        planner_prompt = PromptTemplate.from_template(config.PLANNER_PROMPT_TEMPLATE)
+        planner_chain = planner_prompt | self.llm | StrOutputParser()
+        plan = planner_chain.invoke({"context": context_str, "query": query})
+        print(f"--- Generated Plan ---\n{plan}\n--------------------")
+
+        # --- 2. CODER STEP (First Attempt) ---
+        print("--- Agent engaging Coder... ---")
+        coder_prompt = PromptTemplate.from_template(config.CODER_PROMPT_TEMPLATE)
+        coder_chain = coder_prompt | self.llm | StrOutputParser()
+        first_attempt_code = coder_chain.invoke({"context": context_str, "query": query, "plan": plan})
+
+        # --- 3. First Evaluation ---
+        fitness_score, error_message = evaluate_fitness(first_attempt_code, 1.0)
+        
+        if error_message is None:
+            print("--- First attempt SUCCEEDED. ---")
+            total_time = time.time() - start_time
+            final_fitness, _ = evaluate_fitness(first_attempt_code, total_time)
+            return {"result": first_attempt_code, "final_fitness": final_fitness, "total_time": total_time, "error_message": None}
+            
+        # --- 4. DEBUGGER STEP ---
+        print("--- First attempt FAILED. Engaging Debugger... ---")
+        debug_prompt = PromptTemplate.from_template(config.DEBUGGING_PROMPT_TEMPLATE)
+        debug_chain = debug_prompt | self.llm | StrOutputParser()
+        
+        corrected_code = debug_chain.invoke({
+            "plan": plan,
+            "faulty_code": first_attempt_code,
+            "error_message": error_message
+        })
+        
+        total_time = time.time() - start_time
+        final_fitness, final_error_message = evaluate_fitness(corrected_code, total_time)
+        
+        return {"result": corrected_code, "final_fitness": final_fitness, "total_time": total_time, "error_message": final_error_message}
