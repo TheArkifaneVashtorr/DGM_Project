@@ -1,0 +1,117 @@
+# .gitignore
+
+# Python virtual environment
+venv/
+
+# Python cache files
+__pycache__/
+*.pyc
+*.pyo
+
+# Runtime data directories
+vector_store/
+knowledge_base/
+
+# OS-specific files
+.DS_Store
+Thumbs.db
+
+Phase 14: GitHub Repository and SSH Authentication Setup
+
+Next, we will create the remote repository on GitHub and establish a secure connection using SSH keys.
+
+Step 14.1: Create a New Repository on GitHub
+
+This step must be performed using the GitHub web interface.
+
+    Log into your account on https://github.com.
+    In the top-right corner of the page, click the + icon, then select New repository.
+    Set the Repository name to dgm_project.
+    Select Private. It is critical to keep this research private for now.
+    Important: Do not initialize the repository with a README, license, or .gitignore file. The repository must be completely empty so we can push our existing project to it.
+    Click Create repository.
+
+Step 14.2: Generate a New SSH Key
+
+On your Ubuntu terminal, we will generate a new SSH key pair for authenticating with GitHub. We will use the modern and secure ed25519 algorithm.
+Bash
+
+ssh-keygen -t ed25519 -C "your_email@example.com"
+
+When prompted, press Enter to accept the default file location (~/.ssh/id_ed25519). You may optionally enter a secure passphrase for an extra layer of security.
+
+Step 14.3: Add the SSH Key to the ssh-agent
+
+The ssh-agent is a background program that handles your SSH keys.
+Bash
+
+eval "$(ssh-agent -s)"
+
+Bash
+
+ssh-add ~/.ssh/id_ed25519
+
+Step 14.4: Add the Public SSH Key to Your GitHub Account
+
+First, display the public key on your terminal so you can copy it.
+Bash
+
+cat ~/.ssh/id_ed25519.pub
+
+Select and copy the entire output of this command, which starts with ssh-ed25519 and ends with your email address.
+
+Now, return to the GitHub web interface:
+
+    In the top-right corner, click your profile photo, then click Settings.
+    In the user settings sidebar, click SSH and GPG keys.
+    Click New SSH key.
+    In the "Title" field, add a descriptive label, for example, Janus DGM Workstation.
+    In the "Key" field, paste the public key you copied from the terminal.
+    Click Add SSH key.
+
+Step 14.5: Test Your SSH Connection
+
+Verify that you can successfully authenticate with GitHub via SSH.
+Bash
+
+ssh -T git@github.com
+
+You should see a message that includes: Hi YourUsername! You've successfully authenticated.... You may also see a warning about the authenticity of the host, which you can safely accept by typing yes.
+Phase 15: Commit and Push Project to GitHub
+
+With the local and remote infrastructure in place, we will now commit our work and push it to the GitHub repository.
+
+Step 15.1: Link the Local and Remote Repositories
+
+On the GitHub page for your new repository, click the SSH button to see the correct URL. It will look like git@github.com:YourUsername/dgm_project.git. Use that URL in the following command.
+Bash
+
+git remote add origin git@github.com:YourUsername/dgm_project.git
+
+Step 15.2: Stage and Commit All Project Files
+
+This command stages all current files (respecting the .gitignore) for the initial commit.
+Bash
+
+git add .
+
+Now, commit the staged files with a descriptive message.
+Bash
+
+git commit -m "Initial commit of the Darwin Gödel Machine prototype"
+
+Step 15.3: Set the Default Branch Name to main
+
+Modern Git practices use main as the default branch name. We will ensure our repository follows this convention.
+Bash
+
+git branch -M main
+
+Step 15.4: Push the Project to GitHub
+
+This final command sends your committed files to the remote repository on GitHub. The -u flag sets the upstream tracking reference for future pushes.
+Bash
+
+git push -u origin main
+
+Your DGM project code is now securely archived on GitHub. You can verify this by refreshing your repository page in the web browser.

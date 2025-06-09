@@ -1,0 +1,11 @@
+langchain
+langchain_community
+langchain_chroma
+sentence-transformers
+pandas
+numpy
+psutil
+langchain-ollama
+chromadb
+lxml
+html2text

@@ -1,0 +1,15 @@
+# .dockerignore
+
+# Exclude the Python virtual environment
+venv/
+
+# Exclude Python cache files
+__pycache__/
+*.pyc
+
+# Exclude runtime data directories
+vector_store/
+knowledge_base/
+
+# Exclude git directory if present
+.git/

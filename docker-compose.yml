@@ -1,0 +1,37 @@
+# docker-compose.yml (Refactored)
+# Orchestrates the Ollama service and the DGM agent.
+
+services:
+  ollama:
+    image: ollama/ollama
+    container_name: ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama:/root/.ollama # Use the existing 'ollama' volume
+    tty: true
+    restart: unless-stopped
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+  dgm_agent:
+    build: .
+    container_name: dgm_agent
+    volumes:
+      - .:/app
+    environment:
+      - PYTHONUNBUFFERED=1
+    depends_on:
+      - ollama
+    restart: on-failure
+
+volumes:
+  ollama:
+    # This flag tells Docker Compose to use the existing volume
+    # [cite_start]named 'ollama' instead of creating a new one. [cite: 1461]
+    external: true
