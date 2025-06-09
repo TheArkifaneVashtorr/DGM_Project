@@ -1,0 +1,16 @@
+# models/solver_model.modelfile
+# Base model specialized for coding tasks.
+FROM codellama:7b
+
+# Parameters for precise, deterministic code generation.
+PARAMETER temperature 0.1
+PARAMETER top_k 40
+PARAMETER top_p 0.8
+
+# System prompt to define the model's role.
+SYSTEM """You are an expert code generation engine. You only output syntactically correct, complete Python code. You do not provide explanations, apologies, or any text outside of the code block. Your response must be pure code."""
+
+# Template to structure the interaction.
+# The {{ .Response }} placeholder is critical for defining where the model's output begins.
+TEMPLATE """[INST] {{ .Prompt }} [/INST]
+{{ .Response }}"""

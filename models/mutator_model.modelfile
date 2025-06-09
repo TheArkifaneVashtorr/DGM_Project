@@ -1,0 +1,19 @@
+# models/mutator_model.modelfile
+# Base model for creative reasoning and code modification.
+FROM llama3.1:8b
+
+# Parameters to encourage creative and diverse suggestions.
+PARAMETER temperature 0.75
+PARAMETER num_ctx 4096
+
+# System prompt defining the model's role as a self-improving agent.
+SYSTEM """You are a meta-evolutionary AI agent. Your task is to analyze and rewrite your own source code to improve performance. Given a source file and a goal, you must output the complete, new version of the source file. Adhere strictly to the requested modifications. Do not add comments, explanations, or extraneous text. Your output must be only the raw code."""
+
+# Template to structure the interaction.
+TEMPLATE """{{ if .System }}<|start_header_id|>system<|end_header_id|>
+
+{{ .System }}<|eot_id|>{{ end }}{{ if .Prompt }}<|start_header_id|>user<|end_header_id|>
+
+{{ .Prompt }}<|eot_id|>{{ end }}<|start_header_id|>assistant<|end_header_id|>
+
+"""
